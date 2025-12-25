@@ -8,24 +8,23 @@ import json
 import sys
 import shutil
 
-LOG_FILE = 'speed_log.txt'
-
 def get_args():
     parser = argparse.ArgumentParser(description='Check internet speed')
     parser.add_argument('--serverid', type=int, help='Preferred server ID')
     parser.add_argument('--servername', type=str, help='Preferred server name (partial match)')
     parser.add_argument('--checkserver', type=str, help='Check server availability by name and return details')
+    parser.add_argument('--logfile', type=str, default='speed_log.txt', help='Path to log file (default: speed_log.txt)')
     return parser.parse_args()
 
-def log_results(download, upload, ping, server_id, server_name):
+def log_results(download, upload, ping, server_id, server_name, log_file):
     timestamp = datetime.datetime.now().isoformat()
     # Sanitize server name to remove commas if any, to avoid CSV issues
     server_name = str(server_name).replace(',', ' ')
-    with open(LOG_FILE, 'a') as f:
+    with open(log_file, 'a') as f:
         f.write(f"{timestamp},{download},{upload},{ping},{server_id},{server_name}\n")
 
-def calculate_averages():
-    if not os.path.exists(LOG_FILE):
+def calculate_averages(log_file):
+    if not os.path.exists(log_file):
         return None, None, None
 
     total_download = 0.0
@@ -34,7 +33,7 @@ def calculate_averages():
     count = 0
 
     try:
-        with open(LOG_FILE, 'r') as f:
+        with open(log_file, 'r') as f:
             for line in f:
                 try:
                     parts = line.strip().split(',')
@@ -75,6 +74,27 @@ def get_official_speedtest_command():
             
     return None
 
+def get_server_id_by_name(cmd_exec, search_term):
+    """Finds server ID by partial name match."""
+    try:
+        # Add license flags to prevent hanging on fresh installs
+        result = subprocess.run([cmd_exec, '--accept-license', '--accept-gdpr', '-L', '-f', 'json'], capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"Error listing servers: {result.stderr}")
+            return None
+
+        data = json.loads(result.stdout)
+        servers = data.get('servers', [])
+
+        for server in servers:
+            if search_term.lower() in server['name'].lower() or \
+               search_term.lower() in server['location'].lower() or \
+               search_term.lower() in server['host'].lower():
+                return server['id']
+    except Exception as e:
+        print(f"Error finding server by name: {e}")
+    return None
+
 def run_official_check_server(cmd_exec, search_term):
     """Uses official CLI to check for server availability."""
     print(f"[Official CLI] Searching for server containing '{search_term}'...")
@@ -82,7 +102,8 @@ def run_official_check_server(cmd_exec, search_term):
         # Official CLI doesn't have a simple search-by-name flag easily accessible without running
         # But we can list servers (usually lists closest) and filter.
         # speedtest -L -f json
-        result = subprocess.run([cmd_exec, '-L', '-f', 'json'], capture_output=True, text=True)
+        # Add license flags to prevent hanging on fresh installs
+        result = subprocess.run([cmd_exec, '--accept-license', '--accept-gdpr', '-L', '-f', 'json'], capture_output=True, text=True)
         if result.returncode != 0:
             print(f"Error listing servers: {result.stderr}")
             return
@@ -119,16 +140,18 @@ def run_official_speedtest(cmd_exec, args):
     # Add license acceptance flags to avoid interactive prompts
     cmd = [cmd_exec, '--accept-license', '--accept-gdpr', '-f', 'json']
     
-    if args.serverid:
-        cmd.extend(['-s', str(args.serverid)])
-        print(f"Using Server ID: {args.serverid}")
-    
-    # Selecting by name is tricky in CLI directly without pre-resolving ID
-    # We will skip direct name selection in CLI execution for now, or warn user.
-    if args.servername:
-        print("Warning: --servername is not directly supported in CLI mode execution (requires ID).")
-        print("Please use --checkserver to find the ID first, or use --serverid.")
-        # Proceeding with auto-server selection if ID not provided
+    server_id = args.serverid
+    if args.servername and not server_id:
+        print(f"Resolving server ID for name '{args.servername}'...")
+        server_id = get_server_id_by_name(cmd_exec, args.servername)
+        if not server_id:
+            print(f"Could not find server matching '{args.servername}'. Proceeding with auto-selection.")
+        else:
+            print(f"Found Server ID: {server_id}")
+
+    if server_id:
+        cmd.extend(['-s', str(server_id)])
+        print(f"Using Server ID: {server_id}")
 
     print("Running speedtest...")
     try:
@@ -138,9 +161,14 @@ def run_official_speedtest(cmd_exec, args):
         
         if process.returncode != 0:
             print(f"Speedtest failed: {stderr}")
-            return
+            return False
 
-        data = json.loads(stdout)
+        try:
+            data = json.loads(stdout)
+        except json.JSONDecodeError:
+            print("Error: Invalid JSON output from speedtest CLI.")
+            print(f"Output: {stdout}")
+            return False
         
         # Extract data
         # Note: Official CLI JSON keys might differ slightly, usually:
@@ -161,7 +189,7 @@ def run_official_speedtest(cmd_exec, args):
         print(f"Server: {s_name} (ID: {s_id})")
         print(f"Result URL: {data.get('result', {}).get('url', 'N/A')}")
 
-        log_results(download_mbps, upload_mbps, ping, s_id, s_name)
+        log_results(download_mbps, upload_mbps, ping, s_id, s_name, args.logfile)
         return True
 
     except Exception as e:
@@ -188,7 +216,7 @@ def check_speed():
         sys.exit(1)
         
     # Always print averages at the end if log exists
-    avg_dl, avg_ul, avg_ping = calculate_averages()
+    avg_dl, avg_ul, avg_ping = calculate_averages(args.logfile)
     if avg_dl is not None:
         print("\nHistorical Averages (All Servers):")
         print(f"Avg Download: {avg_dl:.2f} Mbps")
