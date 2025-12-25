@@ -1,0 +1,9 @@
+usage: check_speed.py [-h] [--serverid SERVERID] [--servername SERVERNAME]
+
+Check internet speed
+
+options:
+  -h, --help            show this help message and exit
+  --serverid SERVERID   Preferred server ID
+  --servername SERVERNAME
+                        Preferred server name (partial match)

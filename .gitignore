@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.env
+speed_log.txt
+.venv/
+.idea/
+.vscode/
+debug_discovery.py
+debug_servers.py
