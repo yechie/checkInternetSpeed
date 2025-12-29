@@ -61,14 +61,28 @@ Just search for servers (does not run a speed test):
 ```
 *Use this to find the ID to use with `--serverid` for reliable repetitive testing.*
 
-### 5. Plot History
-Visualize speed test results from the last 30 days:
+### 5. Check Historical Stats
+Display only the historical averages and total count of tests without running a new test:
+```bash
+./check_speed.py --stats
+```
+
+### 6. Plot History
+Visualize speed test results from the last 30 days.
+
+**GUI Plot (Default):**
 ```bash
 ./check_speed.py --plot
 ```
 Opens a window with a dual-axis graph:
 - **Left Axis**: Measured speeds (solid lines).
 - **Right Axis**: Cumulative average speeds (dashed lines).
+
+**Terminal Plot (ASCII):**
+```bash
+./check_speed.py --plot text
+```
+Prints the graph directly to the terminal using `plotext`.
 
 
 ## Logs & Output

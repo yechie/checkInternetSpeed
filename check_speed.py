@@ -9,6 +9,7 @@ import sys
 import shutil
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import plotext as plt_text
 
 
 LOG_FILE = 'speed_log.txt'
@@ -18,7 +19,8 @@ def get_args():
     parser.add_argument('--serverid', type=int, help='Preferred server ID')
     parser.add_argument('--servername', type=str, help='Preferred server name (partial match)')
     parser.add_argument('--checkserver', type=str, help='Check server availability by name and return details')
-    parser.add_argument('--plot', action='store_true', help='Plot internet speed history (last 30 days)')
+    parser.add_argument('--plot', nargs='?', const='gui', help='Plot internet speed history (last 30 days). Use "text" for terminal plot.')
+    parser.add_argument('--stats', action='store_true', help='Show historical statistics (averages and count) without running a test.')
     return parser.parse_args()
 
 
@@ -29,10 +31,9 @@ def log_results(download, upload, ping, server_id, server_name):
     with open(LOG_FILE, 'a') as f:
         f.write(f"{timestamp},{download},{upload},{ping},{server_id},{server_name}\n")
 
-def plot_results():
+def get_plot_data(days=30):
     if not os.path.exists(LOG_FILE):
-        print("No log file found to plot.")
-        return
+        return None
 
     dates = []
     downloads = []
@@ -46,7 +47,7 @@ def plot_results():
     count = 0
 
     now = datetime.datetime.now()
-    one_month_ago = now - datetime.timedelta(days=30)
+    cutoff_date = now - datetime.timedelta(days=days)
 
     try:
         with open(LOG_FILE, 'r') as f:
@@ -68,8 +69,8 @@ def plot_results():
                         current_avg_dl = cum_total_dl / count
                         current_avg_ul = cum_total_ul / count
 
-                        # Filter for plotting: only last 1 month
-                        if dt >= one_month_ago:
+                        # Filter for plotting
+                        if dt >= cutoff_date:
                             dates.append(dt)
                             downloads.append(dl)
                             uploads.append(ul)
@@ -80,11 +81,30 @@ def plot_results():
                     continue
     except Exception as e:
         print(f"Error reading log file for plotting: {e}")
-        return
+        return None
 
     if not dates:
-        print("No data found from the last 30 days.")
+        return None
+        
+    return {
+        'dates': dates,
+        'downloads': downloads,
+        'uploads': uploads,
+        'avg_downloads': avg_downloads,
+        'avg_uploads': avg_uploads
+    }
+
+def plot_results():
+    data = get_plot_data()
+    if not data:
+        print("No log file found or no data from the last 30 days.")
         return
+
+    dates = data['dates']
+    downloads = data['downloads']
+    uploads = data['uploads']
+    avg_downloads = data['avg_downloads']
+    avg_uploads = data['avg_uploads']
 
     # Plotting
     fig, ax1 = plt.subplots(figsize=(12, 6))
@@ -125,10 +145,45 @@ def plot_results():
     print("Displaying plot...")
     plt.show()
 
+def plot_results_text():
+    data = get_plot_data()
+    if not data:
+        print("No log file found or no data from the last 30 days.")
+        return
+
+    dates = data['dates']
+    # Convert datetimes to string for plotext
+    date_strs = [dt.strftime('%Y-%m-%d %H:%M') for dt in dates]
+    
+    downloads = data['downloads']
+    uploads = data['uploads']
+    avg_downloads = data['avg_downloads']
+    avg_uploads = data['avg_uploads']
+
+    plt_text.date_form('Y-m-d H:M')
+    
+    # Measured Speeds (Left Axis effectively)
+    plt_text.plot(date_strs, downloads, label='Measured Download', color='blue')
+    plt_text.plot(date_strs, uploads, label='Measured Upload', color='orange')
+    
+    # Averages
+    # Plotext doesn't support dual-axis easily in same plot in simple mode,
+    # but we can overlay them. Scales might be different but usually DL/UL are in similar ranges.
+    # Note: If scales are vastly different, this might be messy in text mode.
+    # However, existing GUI plot shares same scale concept (Mbps).
+    plt_text.plot(date_strs, avg_downloads, label='Avg Download', color='blue+', marker='sd')
+    plt_text.plot(date_strs, avg_uploads, label='Avg Upload', color='orange+', marker='sd')
+
+    plt_text.title("Internet Speed History (Last 30 Days)")
+    plt_text.xlabel("Date and Time")
+    plt_text.ylabel("Speed (Mbps)")
+    plt_text.show()
+
+
 
 def calculate_averages():
     if not os.path.exists(LOG_FILE):
-        return None, None, None
+        return None, None, None, 0
 
     total_download = 0.0
     total_upload = 0.0
@@ -150,12 +205,12 @@ def calculate_averages():
                     continue
     except Exception as e:
         print(f"Error reading log file: {e}")
-        return None, None, None
+        return None, None, None, 0
 
     if count == 0:
-        return None, None, None
+        return None, None, None, 0
 
-    return total_download / count, total_upload / count, total_ping / count
+    return total_download / count, total_upload / count, total_ping / count, count
 
 def get_official_speedtest_command():
     """Checks for official Ookla speedtest CLI in common paths and returns the executable path."""
@@ -277,10 +332,25 @@ def check_speed():
     
     # Try to find official CLI
     official_cmd = get_official_speedtest_command()
+
+    if args.stats:
+        avg_dl, avg_ul, avg_ping, count = calculate_averages()
+        if avg_dl is not None:
+             print("\nHistorical Statistics:")
+             print(f"Total Tests Run: {count}")
+             print(f"Avg Download:    {avg_dl:.2f} Mbps")
+             print(f"Avg Upload:      {avg_ul:.2f} Mbps")
+             print(f"Avg Ping:        {avg_ping:.2f} ms")
+        else:
+             print("No logs found or empty log file.")
+        sys.exit(0)
     
     if official_cmd:
         if args.plot:
-             plot_results()
+             if args.plot == 'text':
+                 plot_results_text()
+             else:
+                 plot_results()
              sys.exit(0)
              
         if args.checkserver:
@@ -295,12 +365,13 @@ def check_speed():
         sys.exit(1)
         
     # Always print averages at the end if log exists
-    avg_dl, avg_ul, avg_ping = calculate_averages()
+    avg_dl, avg_ul, avg_ping, count = calculate_averages()
     if avg_dl is not None:
-        print("\nHistorical Averages (All Servers):")
+        print("\nHistorical Averages (All Servers, {} tests):".format(count))
         print(f"Avg Download: {avg_dl:.2f} Mbps")
         print(f"Avg Upload: {avg_ul:.2f} Mbps")
         print(f"Avg Ping: {avg_ping:.2f} ms")
 
 if __name__ == "__main__":
     check_speed()
+
