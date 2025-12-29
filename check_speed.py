@@ -7,6 +7,9 @@ import subprocess
 import json
 import sys
 import shutil
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+
 
 LOG_FILE = 'speed_log.txt'
 
@@ -15,7 +18,9 @@ def get_args():
     parser.add_argument('--serverid', type=int, help='Preferred server ID')
     parser.add_argument('--servername', type=str, help='Preferred server name (partial match)')
     parser.add_argument('--checkserver', type=str, help='Check server availability by name and return details')
+    parser.add_argument('--plot', action='store_true', help='Plot internet speed history (last 30 days)')
     return parser.parse_args()
+
 
 def log_results(download, upload, ping, server_id, server_name):
     timestamp = datetime.datetime.now().isoformat()
@@ -23,6 +28,103 @@ def log_results(download, upload, ping, server_id, server_name):
     server_name = str(server_name).replace(',', ' ')
     with open(LOG_FILE, 'a') as f:
         f.write(f"{timestamp},{download},{upload},{ping},{server_id},{server_name}\n")
+
+def plot_results():
+    if not os.path.exists(LOG_FILE):
+        print("No log file found to plot.")
+        return
+
+    dates = []
+    downloads = []
+    uploads = []
+    avg_downloads = []
+    avg_uploads = []
+
+    # Variables for cumulative average calculation
+    cum_total_dl = 0.0
+    cum_total_ul = 0.0
+    count = 0
+
+    now = datetime.datetime.now()
+    one_month_ago = now - datetime.timedelta(days=30)
+
+    try:
+        with open(LOG_FILE, 'r') as f:
+            for line in f:
+                try:
+                    parts = line.strip().split(',')
+                    if len(parts) >= 4:
+                        ts_str = parts[0]
+                        dl = float(parts[1])
+                        ul = float(parts[2])
+                        
+                        dt = datetime.datetime.fromisoformat(ts_str)
+                        
+                        # Calculate cumulative averages (history matters for this, so calculate before filtering)
+                        cum_total_dl += dl
+                        cum_total_ul += ul
+                        count += 1
+                        
+                        current_avg_dl = cum_total_dl / count
+                        current_avg_ul = cum_total_ul / count
+
+                        # Filter for plotting: only last 1 month
+                        if dt >= one_month_ago:
+                            dates.append(dt)
+                            downloads.append(dl)
+                            uploads.append(ul)
+                            avg_downloads.append(current_avg_dl)
+                            avg_uploads.append(current_avg_ul)
+
+                except ValueError:
+                    continue
+    except Exception as e:
+        print(f"Error reading log file for plotting: {e}")
+        return
+
+    if not dates:
+        print("No data found from the last 30 days.")
+        return
+
+    # Plotting
+    fig, ax1 = plt.subplots(figsize=(12, 6))
+
+    # Left Y-axis: Measured speeds
+    color_dl = 'tab:blue'
+    color_ul = 'tab:orange'
+    
+    ax1.set_xlabel('Date and Time')
+    ax1.set_ylabel('Measured Speed (Mbps)', color='black')
+    
+    l1, = ax1.plot(dates, downloads, color=color_dl, label='Measured Download', alpha=0.6)
+    l2, = ax1.plot(dates, uploads, color=color_ul, label='Measured Upload', alpha=0.6)
+    
+    ax1.tick_params(axis='y', labelcolor='black')
+
+    # Right Y-axis: Average speeds
+    ax2 = ax1.twinx()
+    ax2.set_ylabel('Historical Average Speed (Mbps)', color='black')
+    
+    l3, = ax2.plot(dates, avg_downloads, color=color_dl, linestyle='--', label='Avg Download (Cumulative)', linewidth=2)
+    l4, = ax2.plot(dates, avg_uploads, color=color_ul, linestyle='--', label='Avg Upload (Cumulative)', linewidth=2)
+    
+    ax2.tick_params(axis='y', labelcolor='black')
+
+    # Formatting
+    plt.title('Internet Speed History (Last 30 Days)')
+    ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+    fig.autofmt_xdate()
+    
+    # Legend
+    lines = [l1, l2, l3, l4]
+    labels = [l.get_label() for l in lines]
+    ax1.legend(lines, labels, loc='upper left')
+
+    plt.grid(True)
+    plt.tight_layout()
+    print("Displaying plot...")
+    plt.show()
+
 
 def calculate_averages():
     if not os.path.exists(LOG_FILE):
@@ -177,7 +279,12 @@ def check_speed():
     official_cmd = get_official_speedtest_command()
     
     if official_cmd:
+        if args.plot:
+             plot_results()
+             sys.exit(0)
+             
         if args.checkserver:
+
             search_term = args.checkserver.strip("'").strip('"')
             run_official_check_server(official_cmd, search_term)
         else:
