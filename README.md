@@ -49,7 +49,7 @@ chmod +x check_speed.py
 ```
 
 ### 3. Select a Server by Name
-Search for a server with "Bezeq" in the name and use it:
+Search for a server with "Bezeq" in the name and use it. The script will try to resolve the name to a server ID.
 ```bash
 ./check_speed.py --servername "Bezeq"
 ```
@@ -60,6 +60,12 @@ Just search for servers (does not run a speed test):
 ./check_speed.py --checkserver "Tel Aviv"
 ```
 *Use this to find the ID to use with `--serverid` for reliable repetitive testing.*
+
+### 5. Custom Log File
+Specify a custom log file (default is `speed_log.txt`):
+```bash
+./check_speed.py --logfile "my_speed_log.txt"
+```
 
 ### 5. Check Historical Stats
 Display only the historical averages and total count of tests without running a new test:
@@ -87,7 +93,7 @@ Prints the graph directly to the terminal using `plotext`.
 
 ## Logs & Output
 
-Results are appended to `speed_log.txt` in CSV format:
+Results are appended to `speed_log.txt` (or specified log file) in CSV format:
 ```csv
 timestamp,download_speed,upload_speed,ping,server_id,server_name
 ```
