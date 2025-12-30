@@ -7,3 +7,4 @@ speed_log.txt
 .vscode/
 debug_discovery.py
 debug_servers.py
+test.speedtest.log

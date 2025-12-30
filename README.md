@@ -68,7 +68,7 @@ Specify a custom log file (default is `speed_log.txt`):
 ```
 
 ### 5. Check Historical Stats
-Display only the historical averages and total count of tests without running a new test:
+Display historical statistics without running a new test. This includes the total number of tests, average speeds, and the lowest and highest speeds recorded.
 ```bash
 ./check_speed.py --stats
 ```

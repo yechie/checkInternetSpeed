@@ -1,4 +1,5 @@
 usage: check_speed.py [-h] [--serverid SERVERID] [--servername SERVERNAME]
+                      [--checkserver CHECKSERVER] [--plot [PLOT]] [--stats]
 
 Check internet speed
 
@@ -7,3 +8,9 @@ options:
   --serverid SERVERID   Preferred server ID
   --servername SERVERNAME
                         Preferred server name (partial match)
+  --checkserver CHECKSERVER
+                        Check server availability by name and return details
+  --plot [PLOT]         Plot internet speed history (last 30 days). Use "text"
+                        for terminal plot.
+  --stats               Show historical statistics (averages and count)
+                        without running a test.

@@ -17,27 +17,21 @@ def get_args():
     parser.add_argument('--serverid', type=int, help='Preferred server ID')
     parser.add_argument('--servername', type=str, help='Preferred server name (partial match)')
     parser.add_argument('--checkserver', type=str, help='Check server availability by name and return details')
+    parser.add_argument('--plot', nargs='?', const='gui', help='Plot internet speed history (last 30 days). Use "text" for terminal plot.')
+    parser.add_argument('--stats', action='store_true', help='Show historical statistics (averages and count) without running a test.')
     parser.add_argument('--logfile', type=str, default='speed_log.txt', help='Path to log file (default: speed_log.txt)')
     return parser.parse_args()
 
+
 def log_results(download, upload, ping, server_id, server_name, log_file):
-    parser.add_argument('--plot', nargs='?', const='gui', help='Plot internet speed history (last 30 days). Use "text" for terminal plot.')
-    parser.add_argument('--stats', action='store_true', help='Show historical statistics (averages and count) without running a test.')
-    return parser.parse_args()
-
-
-def log_results(download, upload, ping, server_id, server_name):
     timestamp = datetime.datetime.now().isoformat()
     # Sanitize server name to remove commas if any, to avoid CSV issues
     server_name = str(server_name).replace(',', ' ')
     with open(log_file, 'a') as f:
         f.write(f"{timestamp},{download},{upload},{ping},{server_id},{server_name}\n")
 
-def calculate_averages(log_file):
+def get_plot_data(log_file, days=30):
     if not os.path.exists(log_file):
-        return None, None, None
-def get_plot_data(days=30):
-    if not os.path.exists(LOG_FILE):
         return None
 
     dates = []
@@ -55,7 +49,7 @@ def get_plot_data(days=30):
     cutoff_date = now - datetime.timedelta(days=days)
 
     try:
-        with open(LOG_FILE, 'r') as f:
+        with open(log_file, 'r') as f:
             for line in f:
                 try:
                     parts = line.strip().split(',')
@@ -99,8 +93,8 @@ def get_plot_data(days=30):
         'avg_uploads': avg_uploads
     }
 
-def plot_results():
-    data = get_plot_data()
+def plot_results(log_file):
+    data = get_plot_data(log_file)
     if not data:
         print("No log file found or no data from the last 30 days.")
         return
@@ -150,8 +144,8 @@ def plot_results():
     print("Displaying plot...")
     plt.show()
 
-def plot_results_text():
-    data = get_plot_data()
+def plot_results_text(log_file):
+    data = get_plot_data(log_file)
     if not data:
         print("No log file found or no data from the last 30 days.")
         return
@@ -185,15 +179,19 @@ def plot_results_text():
     plt_text.show()
 
 
-
-def calculate_averages():
-    if not os.path.exists(LOG_FILE):
-        return None, None, None, 0
+def calculate_stats(log_file):
+    if not os.path.exists(log_file):
+        return None
 
     total_download = 0.0
     total_upload = 0.0
     total_ping = 0.0
     count = 0
+    
+    min_download = float('inf')
+    max_download = 0.0
+    min_upload = float('inf')
+    max_upload = 0.0
 
     try:
         with open(log_file, 'r') as f:
@@ -202,20 +200,38 @@ def calculate_averages():
                     parts = line.strip().split(',')
                     # Ensure we have at least the basic speed data (timestamp, dl, ul, ping)
                     if len(parts) >= 4:
-                        total_download += float(parts[1])
-                        total_upload += float(parts[2])
+                        download_speed = float(parts[1])
+                        upload_speed = float(parts[2])
+                        
+                        total_download += download_speed
+                        total_upload += upload_speed
                         total_ping += float(parts[3])
                         count += 1
+                        
+                        min_download = min(min_download, download_speed)
+                        max_download = max(max_download, download_speed)
+                        min_upload = min(min_upload, upload_speed)
+                        max_upload = max(max_upload, upload_speed)
+                        
                 except ValueError:
                     continue
     except Exception as e:
         print(f"Error reading log file: {e}")
-        return None, None, None, 0
+        return None
 
     if count == 0:
-        return None, None, None, 0
+        return None
 
-    return total_download / count, total_upload / count, total_ping / count, count
+    return {
+        'avg_dl': total_download / count,
+        'avg_ul': total_upload / count,
+        'avg_ping': total_ping / count,
+        'count': count,
+        'min_dl': min_download,
+        'max_dl': max_download,
+        'min_ul': min_upload,
+        'max_ul': max_upload,
+    }
 
 def get_official_speedtest_command():
     """Checks for official Ookla speedtest CLI in common paths and returns the executable path."""
@@ -368,13 +384,17 @@ def check_speed():
     official_cmd = get_official_speedtest_command()
 
     if args.stats:
-        avg_dl, avg_ul, avg_ping, count = calculate_averages()
-        if avg_dl is not None:
+        stats = calculate_stats(args.logfile)
+        if stats:
              print("\nHistorical Statistics:")
-             print(f"Total Tests Run: {count}")
-             print(f"Avg Download:    {avg_dl:.2f} Mbps")
-             print(f"Avg Upload:      {avg_ul:.2f} Mbps")
-             print(f"Avg Ping:        {avg_ping:.2f} ms")
+             print(f"Total Tests Run: {stats['count']}")
+             print(f"Avg Download:    {stats['avg_dl']:.2f} Mbps")
+             print(f"Highest Download:{stats['max_dl']:.2f} Mbps")
+             print(f"Lowest Download: {stats['min_dl']:.2f} Mbps")
+             print(f"Avg Upload:      {stats['avg_ul']:.2f} Mbps")
+             print(f"Highest Upload:  {stats['max_ul']:.2f} Mbps")
+             print(f"Lowest Upload:   {stats['min_ul']:.2f} Mbps")
+             print(f"Avg Ping:        {stats['avg_ping']:.2f} ms")
         else:
              print("No logs found or empty log file.")
         sys.exit(0)
@@ -382,14 +402,14 @@ def check_speed():
     if official_cmd:
         if args.plot:
              if args.plot == 'text':
-                 plot_results_text()
+                 plot_results_text(args.logfile)
              else:
-                 plot_results()
+                 plot_results(args.logfile)
              sys.exit(0)
              
         if args.checkserver:
 
-            search_term = args.checkserver.strip("'").strip('"')
+            search_term = args.checkserver.strip("'" ).strip('"')
             run_official_check_server(official_cmd, search_term)
         else:
             run_official_speedtest(official_cmd, args)
@@ -399,14 +419,12 @@ def check_speed():
         sys.exit(1)
         
     # Always print averages at the end if log exists
-    avg_dl, avg_ul, avg_ping = calculate_averages(args.logfile)
-    avg_dl, avg_ul, avg_ping, count = calculate_averages()
-    if avg_dl is not None:
-        print("\nHistorical Averages (All Servers, {} tests):".format(count))
-        print(f"Avg Download: {avg_dl:.2f} Mbps")
-        print(f"Avg Upload: {avg_ul:.2f} Mbps")
-        print(f"Avg Ping: {avg_ping:.2f} ms")
+    stats = calculate_stats(args.logfile)
+    if stats:
+        print("\nHistorical Averages (All Servers, {} tests):".format(stats['count']))
+        print(f"Avg Download: {stats['avg_dl']:.2f} Mbps")
+        print(f"Avg Upload: {stats['avg_ul']:.2f} Mbps")
+        print(f"Avg Ping: {stats['avg_ping']:.2f} ms")
 
 if __name__ == "__main__":
     check_speed()
-
