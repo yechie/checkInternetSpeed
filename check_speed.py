@@ -387,14 +387,16 @@ def check_speed():
         stats = calculate_stats(args.logfile)
         if stats:
              print("\nHistorical Statistics:")
+             print("=========================================")
              print(f"Total Tests Run: {stats['count']}")
              print(f"Avg Download:    {stats['avg_dl']:.2f} Mbps")
+             print(f"Avg Upload:      {stats['avg_ul']:.2f} Mbps")
+             print(f"Avg Ping:        {stats['avg_ping']:.2f} ms")
+             print("=========================================")
              print(f"Highest Download:{stats['max_dl']:.2f} Mbps")
              print(f"Lowest Download: {stats['min_dl']:.2f} Mbps")
-             print(f"Avg Upload:      {stats['avg_ul']:.2f} Mbps")
              print(f"Highest Upload:  {stats['max_ul']:.2f} Mbps")
              print(f"Lowest Upload:   {stats['min_ul']:.2f} Mbps")
-             print(f"Avg Ping:        {stats['avg_ping']:.2f} ms")
         else:
              print("No logs found or empty log file.")
         sys.exit(0)
