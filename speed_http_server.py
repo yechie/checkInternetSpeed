@@ -77,8 +77,8 @@ class SpeedHTTPRequestHandler(BaseHTTPRequestHandler):
             html_content += tile("Avg Upload", f"{stats.get('avg_ul', 0):.2f}", "Mbps")
             html_content += tile("Avg Ping", f"{stats.get('avg_ping', 0):.2f}", "ms")
             html_content += tile("Highest Download", f"{stats.get('max_dl', 0):.2f}", "Mbps")
-            html_content += tile("Highest Upload", f"{stats.get('max_ul', 0):.2f}", "Mbps")
             html_content += tile("Total Tests", stats.get('count', 0), "")
+            html_content += tile("Highest Upload", f"{stats.get('max_ul', 0):.2f}", "Mbps")
             
             html_content += "</div>"
         else:
