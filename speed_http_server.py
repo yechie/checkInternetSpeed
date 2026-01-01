@@ -3,6 +3,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
 import os
 import tempfile
+import base64
 from speed_utils import calculate_stats, generate_plot_image
 
 # Configuration
@@ -18,47 +19,81 @@ class SpeedHTTPRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        if self.path == '/stats':
-            self.handle_stats_request()
-        elif self.path == '/plot.png':
-            self.handle_plot_request()
-        elif self.path == '/':
-            self._set_headers('text/html')
-            self.wfile.write(b"""
-                <html>
-                <head><title>Speedtest Server</title></head>
-                <body>
-                    <h1>Welcome to the Speedtest Server!</h1>
-                    <p>Check out your internet speed statistics:</p>
-                    <ul>
-                        <li><a href="/stats">Raw Statistics (JSON)</a></li>
-                        <li><a href="/plot.png">Speed History Plot (PNG)</a></li>
-                    </ul>
-                </body>
-                </html>
-            """)
-
-    def handle_stats_request(self):
-        stats = calculate_stats(LOG_FILE)
-        if stats:
-            self._set_headers('application/json')
-            self.wfile.write(json.dumps(stats, indent=4).encode('utf-8'))
+        if self.path == '/':
+            self.handle_main_page_request()
         else:
-            self._set_headers('application/json', status=404)
-            self.wfile.write(json.dumps({"error": "No stats found or log file is empty/missing."} ).encode('utf-8'))
+            self._set_headers(status=404)
+            self.wfile.write(b"404 Not Found")
 
-    def handle_plot_request(self):
+    def handle_main_page_request(self):
+        stats = calculate_stats(LOG_FILE)
+        
+        plot_base64 = None
         if generate_plot_image(LOG_FILE, TEMP_PLOT_FILE):
             if os.path.exists(TEMP_PLOT_FILE):
-                self._set_headers('image/png')
                 with open(TEMP_PLOT_FILE, 'rb') as f:
-                    self.wfile.write(f.read())
-            else:
-                self._set_headers(status=500)
-                self.wfile.write(b"Error generating plot image.")
+                    plot_base64 = base64.b64encode(f.read()).decode('utf-8')
+
+        html = self._generate_html(stats, plot_base64)
+        self._set_headers('text/html')
+        self.wfile.write(html.encode('utf-8'))
+
+    def _generate_html(self, stats, plot_base64):
+        css = """
+<style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; background-color: #f0f2f5; color: #1c1e21; }
+    .header { background-color: #fff; padding: 20px 40px; border-bottom: 1px solid #dddfe2; text-align: center; }
+    .header h1 { color: #0056b3; margin: 0; font-size: 2rem; }
+    .container { padding: 40px; }
+    .stats-container { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; margin-bottom: 40px; }
+    .stat-tile { background-color: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 25px; text-align: center; flex: 1 1 200px; min-width: 200px; transition: transform 0.2s; }
+    .stat-tile:hover { transform: translateY(-5px); }
+    .stat-tile h3 { margin: 0 0 15px; color: #606770; font-size: 1rem; font-weight: 600; }
+    .stat-tile .value { font-size: 2.5rem; margin: 0; color: #0056b3; font-weight: 700; }
+    .stat-tile .unit { font-size: 1rem; color: #606770; }
+    .plot-container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; }
+    .plot-container h2 { color: #0056b3; margin-top: 0; }
+    img { max-width: 100%; height: auto; }
+</style>
+        "
+        
+        html_content = f"<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'><title>Internet Speed Statistics</title>{css}</head><body>"
+        html_content += "<div class='header'><h1>Internet Speed Statistics</h1></div>"
+        html_content += "<div class='container'>"
+
+        if stats:
+            html_content += "<div class='stats-container'>"
+            
+            def tile(title, value, unit):
+                return f"""
+                <div class='stat-tile'>
+                    <h3>{title}</h3>
+                    <p class='value'>{value}</p>
+                    <span class='unit'>{unit}</span>
+                </div>
+                """
+            
+            html_content += tile("Avg Download", f"{stats.get('avg_dl', 0):.2f}", "Mbps")
+            html_content += tile("Avg Upload", f"{stats.get('avg_ul', 0):.2f}", "Mbps")
+            html_content += tile("Avg Ping", f"{stats.get('avg_ping', 0):.2f}", "ms")
+            html_content += tile("Highest Download", f"{stats.get('max_dl', 0):.2f}", "Mbps")
+            html_content += tile("Highest Upload", f"{stats.get('max_ul', 0):.2f}", "Mbps")
+            html_content += tile("Total Tests", stats.get('count', 0), "")
+            
+            html_content += "</div>"
         else:
-            self._set_headers(status=500)
-            self.wfile.write(b"Error generating plot or no data available.")
+            html_content += "<p>No statistics available yet.</p>"
+
+        if plot_base64:
+            html_content += "<div class='plot-container'>"
+            html_content += "<h2>Speed History Plot</h2>"
+            html_content += f"<img src='data:image/png;base64,{plot_base64}' alt='Internet speed history plot'>"
+            html_content += "</div>"
+        else:
+            html_content += "<div class='plot-container'><p>Could not generate plot. Run a speed test to generate data.</p></div>"
+        
+        html_content += "</div></body></html>"
+        return html_content
 
 def run_server():
     server_address = (HOST, PORT)
