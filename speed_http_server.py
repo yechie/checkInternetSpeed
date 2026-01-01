@@ -55,7 +55,7 @@ class SpeedHTTPRequestHandler(BaseHTTPRequestHandler):
     .plot-container h2 { color: #0056b3; margin-top: 0; }
     img { max-width: 100%; height: auto; }
 </style>
-        "
+        """
         
         html_content = f"<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'><title>Internet Speed Statistics</title>{css}</head><body>"
         html_content += "<div class='header'><h1>Internet Speed Statistics</h1></div>"
