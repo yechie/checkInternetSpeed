@@ -8,3 +8,9 @@ speed_log.txt
 debug_discovery.py
 debug_servers.py
 test.speedtest.log
+
+# SSL certificates
+*.pem
+
+# Error logs
+server_error.log

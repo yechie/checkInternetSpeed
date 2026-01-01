@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import base64
+import ssl
 from speed_utils import calculate_stats, generate_plot_image, get_latest_speedtest
 
 # Configuration
@@ -11,6 +12,9 @@ HOST = '0.0.0.0'
 PORT = 8000
 LOG_FILE = 'speed_log.txt' # Make sure this matches the log file used by check_speed.py
 TEMP_PLOT_FILE = os.path.join(tempfile.gettempdir(), 'speed_plot.png')
+
+class ReuseAddrHTTPServer(HTTPServer):
+    allow_reuse_address = True
 
 class SpeedHTTPRequestHandler(BaseHTTPRequestHandler):
     def _set_headers(self, content_type='text/html', status=200):
@@ -109,8 +113,16 @@ class SpeedHTTPRequestHandler(BaseHTTPRequestHandler):
 
 def run_server():
     server_address = (HOST, PORT)
-    httpd = HTTPServer(server_address, SpeedHTTPRequestHandler)
-    print(f"Starting httpd server on {HOST}:{PORT}")
+    httpd = ReuseAddrHTTPServer(server_address, SpeedHTTPRequestHandler)
+    print(f"Starting https server on {HOST}:{PORT}")
+    
+    # Create an SSL context
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certfile="cert.pem", keyfile="key.pem")
+    
+    # Wrap the socket
+    httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
+
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
