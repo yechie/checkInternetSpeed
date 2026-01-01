@@ -7,9 +7,8 @@ import subprocess
 import json
 import sys
 import shutil
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-import plotext as plt_text
+import tempfile
+from speed_utils import calculate_stats, get_plot_data, generate_plot_image
 
 
 def get_args():
@@ -30,121 +29,27 @@ def log_results(download, upload, ping, server_id, server_name, log_file):
     with open(log_file, 'a') as f:
         f.write(f"{timestamp},{download},{upload},{ping},{server_id},{server_name}\n")
 
-def get_plot_data(log_file, days=30):
-    if not os.path.exists(log_file):
-        return None
-
-    dates = []
-    downloads = []
-    uploads = []
-    avg_downloads = []
-    avg_uploads = []
-
-    # Variables for cumulative average calculation
-    cum_total_dl = 0.0
-    cum_total_ul = 0.0
-    count = 0
-
-    now = datetime.datetime.now()
-    cutoff_date = now - datetime.timedelta(days=days)
-
-    try:
-        with open(log_file, 'r') as f:
-            for line in f:
-                try:
-                    parts = line.strip().split(',')
-                    if len(parts) >= 4:
-                        ts_str = parts[0]
-                        dl = float(parts[1])
-                        ul = float(parts[2])
-                        
-                        dt = datetime.datetime.fromisoformat(ts_str)
-                        
-                        # Calculate cumulative averages (history matters for this, so calculate before filtering)
-                        cum_total_dl += dl
-                        cum_total_ul += ul
-                        count += 1
-                        
-                        current_avg_dl = cum_total_dl / count
-                        current_avg_ul = cum_total_ul / count
-
-                        # Filter for plotting
-                        if dt >= cutoff_date:
-                            dates.append(dt)
-                            downloads.append(dl)
-                            uploads.append(ul)
-                            avg_downloads.append(current_avg_dl)
-                            avg_uploads.append(current_avg_ul)
-
-                except ValueError:
-                    continue
-    except Exception as e:
-        print(f"Error reading log file for plotting: {e}")
-        return None
-
-    if not dates:
-        return None
-        
-    return {
-        'dates': dates,
-        'downloads': downloads,
-        'uploads': uploads,
-        'avg_downloads': avg_downloads,
-        'avg_uploads': avg_uploads
-    }
-
 def plot_results(log_file):
-    data = get_plot_data(log_file)
-    if not data:
-        print("No log file found or no data from the last 30 days.")
-        return
-
-    dates = data['dates']
-    downloads = data['downloads']
-    uploads = data['uploads']
-    avg_downloads = data['avg_downloads']
-    avg_uploads = data['avg_uploads']
-
-    # Plotting
-    fig, ax1 = plt.subplots(figsize=(12, 6))
-
-    # Left Y-axis: Measured speeds
-    color_dl = 'tab:blue'
-    color_ul = 'tab:orange'
-    
-    ax1.set_xlabel('Date and Time')
-    ax1.set_ylabel('Measured Speed (Mbps)', color='black')
-    
-    l1, = ax1.plot(dates, downloads, color=color_dl, label='Measured Download', alpha=0.6)
-    l2, = ax1.plot(dates, uploads, color=color_ul, label='Measured Upload', alpha=0.6)
-    
-    ax1.tick_params(axis='y', labelcolor='black')
-
-    # Right Y-axis: Average speeds
-    ax2 = ax1.twinx()
-    ax2.set_ylabel('Historical Average Speed (Mbps)', color='black')
-    
-    l3, = ax2.plot(dates, avg_downloads, color=color_dl, linestyle='--', label='Avg Download (Cumulative)', linewidth=2)
-    l4, = ax2.plot(dates, avg_uploads, color=color_ul, linestyle='--', label='Avg Upload (Cumulative)', linewidth=2)
-    
-    ax2.tick_params(axis='y', labelcolor='black')
-
-    # Formatting
-    plt.title('Internet Speed History (Last 30 Days)')
-    ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
-    fig.autofmt_xdate()
-    
-    # Legend
-    lines = [l1, l2, l3, l4]
-    labels = [l.get_label() for l in lines]
-    ax1.legend(lines, labels, loc='upper left')
-
-    plt.grid(True)
-    plt.tight_layout()
-    print("Displaying plot...")
-    plt.show()
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".png") as tmpfile:
+            if generate_plot_image(log_file, tmpfile.name):
+                # Display the generated image
+                import matplotlib.pyplot as plt
+                img = plt.imread(tmpfile.name)
+                plt.imshow(img)
+                plt.axis('off') # Hide axes
+                plt.title('Internet Speed History')
+                print("Displaying plot...")
+                plt.show()
+            else:
+                print("Failed to generate plot.")
+    except ImportError:
+        print("Matplotlib is required for GUI plot. Please install it (`pip install matplotlib`).")
+    except Exception as e:
+        print(f"An error occurred during plotting: {e}")
 
 def plot_results_text(log_file):
+    import plotext as plt_text # Import plotext here as it's only used for text plots
     data = get_plot_data(log_file)
     if not data:
         print("No log file found or no data from the last 30 days.")
@@ -166,10 +71,6 @@ def plot_results_text(log_file):
     plt_text.plot(date_strs, uploads, label='Measured Upload', color='orange')
     
     # Averages
-    # Plotext doesn't support dual-axis easily in same plot in simple mode,
-    # but we can overlay them. Scales might be different but usually DL/UL are in similar ranges.
-    # Note: If scales are vastly different, this might be messy in text mode.
-    # However, existing GUI plot shares same scale concept (Mbps).
     plt_text.plot(date_strs, avg_downloads, label='Avg Download', color='blue+', marker='sd')
     plt_text.plot(date_strs, avg_uploads, label='Avg Upload', color='orange+', marker='sd')
 
@@ -177,61 +78,6 @@ def plot_results_text(log_file):
     plt_text.xlabel("Date and Time")
     plt_text.ylabel("Speed (Mbps)")
     plt_text.show()
-
-
-def calculate_stats(log_file):
-    if not os.path.exists(log_file):
-        return None
-
-    total_download = 0.0
-    total_upload = 0.0
-    total_ping = 0.0
-    count = 0
-    
-    min_download = float('inf')
-    max_download = 0.0
-    min_upload = float('inf')
-    max_upload = 0.0
-
-    try:
-        with open(log_file, 'r') as f:
-            for line in f:
-                try:
-                    parts = line.strip().split(',')
-                    # Ensure we have at least the basic speed data (timestamp, dl, ul, ping)
-                    if len(parts) >= 4:
-                        download_speed = float(parts[1])
-                        upload_speed = float(parts[2])
-                        
-                        total_download += download_speed
-                        total_upload += upload_speed
-                        total_ping += float(parts[3])
-                        count += 1
-                        
-                        min_download = min(min_download, download_speed)
-                        max_download = max(max_download, download_speed)
-                        min_upload = min(min_upload, upload_speed)
-                        max_upload = max(max_upload, upload_speed)
-                        
-                except ValueError:
-                    continue
-    except Exception as e:
-        print(f"Error reading log file: {e}")
-        return None
-
-    if count == 0:
-        return None
-
-    return {
-        'avg_dl': total_download / count,
-        'avg_ul': total_upload / count,
-        'avg_ping': total_ping / count,
-        'count': count,
-        'min_dl': min_download,
-        'max_dl': max_download,
-        'min_ul': min_upload,
-        'max_ul': max_upload,
-    }
 
 def get_official_speedtest_command():
     """Checks for official Ookla speedtest CLI in common paths and returns the executable path."""
@@ -379,7 +225,7 @@ def run_official_speedtest(cmd_exec, args):
 
 def check_speed():
     args = get_args()
-    
+
     # Try to find official CLI
     official_cmd = get_official_speedtest_command()
 
@@ -400,33 +246,34 @@ def check_speed():
         else:
              print("No logs found or empty log file.")
         sys.exit(0)
-    
-    if official_cmd:
-        if args.plot:
-             if args.plot == 'text':
-                 plot_results_text(args.logfile)
-             else:
-                 plot_results(args.logfile)
-             sys.exit(0)
-             
-        if args.checkserver:
 
-            search_term = args.checkserver.strip("'" ).strip('"')
-            run_official_check_server(official_cmd, search_term)
-        else:
-            run_official_speedtest(official_cmd, args)
-    else:
+    if not official_cmd:
         print("Error: Official Ookla Speedtest CLI not found.")
         print("Please install it from: https://www.speedtest.net/apps/cli")
         sys.exit(1)
-        
-    # Always print averages at the end if log exists
-    stats = calculate_stats(args.logfile)
-    if stats:
-        print("\nHistorical Averages (All Servers, {} tests):".format(stats['count']))
-        print(f"Avg Download: {stats['avg_dl']:.2f} Mbps")
-        print(f"Avg Upload: {stats['avg_ul']:.2f} Mbps")
-        print(f"Avg Ping: {stats['avg_ping']:.2f} ms")
+
+    if args.plot:
+         if args.plot == 'text':
+             plot_results_text(args.logfile)
+         else:
+             plot_results(args.logfile)
+         sys.exit(0)
+
+    if args.checkserver:
+        search_term = args.checkserver.strip("'").strip('"')
+        run_official_check_server(official_cmd, search_term)
+        sys.exit(0)
+
+    # Default action: run speedtest
+    if run_official_speedtest(official_cmd, args):
+        # On success, print historical averages
+        stats = calculate_stats(args.logfile)
+        if stats:
+            print("\nHistorical Averages (All Servers, {} tests):".format(stats['count']))
+            print(f"Avg Download: {stats['avg_dl']:.2f} Mbps")
+            print(f"Avg Upload: {stats['avg_ul']:.2f} Mbps")
+            print(f"Avg Ping: {stats['avg_ping']:.2f} ms")
+
 
 if __name__ == "__main__":
     check_speed()
