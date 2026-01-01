@@ -172,3 +172,31 @@ def generate_plot_image(log_file, output_path, days=30):
     except Exception as e:
         print(f"Error saving plot to {output_path}: {e}")
         return False
+
+def get_latest_speedtest(log_file):
+    if not os.path.exists(log_file):
+        return None
+
+    try:
+        with open(log_file, 'rb') as f:
+            f.seek(-2, os.SEEK_END)
+            while f.read(1) != b'\n':
+                f.seek(-2, os.SEEK_CUR)
+            last_line = f.readline().decode()
+
+            parts = last_line.strip().split(',')
+            
+            if len(parts) >= 6:
+                return {
+                    'timestamp': parts[0],
+                    'download': float(parts[1]),
+                    'upload': float(parts[2]),
+                    'ping': float(parts[3]),
+                    'server_id': parts[4],
+                    'server_name': parts[5]
+                }
+    except Exception as e:
+        print(f"Error reading latest speedtest from log file: {e}")
+        return None
+    
+    return None
