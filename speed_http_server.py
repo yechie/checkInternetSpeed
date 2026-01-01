@@ -22,9 +22,21 @@ class SpeedHTTPRequestHandler(BaseHTTPRequestHandler):
             self.handle_stats_request()
         elif self.path == '/plot.png':
             self.handle_plot_request()
-        else:
-            self._set_headers(status=404)
-            self.wfile.write(b"404 Not Found")
+        elif self.path == '/':
+            self._set_headers('text/html')
+            self.wfile.write(b"""
+                <html>
+                <head><title>Speedtest Server</title></head>
+                <body>
+                    <h1>Welcome to the Speedtest Server!</h1>
+                    <p>Check out your internet speed statistics:</p>
+                    <ul>
+                        <li><a href="/stats">Raw Statistics (JSON)</a></li>
+                        <li><a href="/plot.png">Speed History Plot (PNG)</a></li>
+                    </ul>
+                </body>
+                </html>
+            """)
 
     def handle_stats_request(self):
         stats = calculate_stats(LOG_FILE)
