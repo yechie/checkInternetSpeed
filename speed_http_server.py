@@ -65,13 +65,13 @@ class SpeedHTTPRequestHandler(BaseHTTPRequestHandler):
             html_content += "<div class='stats-container'>"
             
             def tile(title, value, unit):
-                return f"""
+                return f'''
                 <div class='stat-tile'>
                     <h3>{title}</h3>
                     <p class='value'>{value}</p>
                     <span class='unit'>{unit}</span>
                 </div>
-                """
+                '''
             
             html_content += tile("Avg Download", f"{stats.get('avg_dl', 0):.2f}", "Mbps")
             html_content += tile("Avg Upload", f"{stats.get('avg_ul', 0):.2f}", "Mbps")
